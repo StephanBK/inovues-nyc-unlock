@@ -22,7 +22,7 @@
 </head><body>
 <a class="back" href="index.html">← all options</a>
 <div id="map"></div>
-<div class="head"><h1 id="h">Woodhull Hospital</h1><p id="p">Brooklyn. 1,134 secondary window units, NYSERDA-funded, in fabrication. The reference install.</p></div>
+<div class="head"><h1 id="h">Woodhull Hospital</h1><p id="p">Brooklyn. 1,134 secondary window units in fabrication. The reference install.</p></div>
 <div class="count"><div class="n" id="nb">1</div><div class="l" id="nl">building</div><div class="n sq" id="nsq">0.5M</div><div class="l">sq ft</div></div>
 <div class="legend" id="legend"><h3>What you're seeing</h3><div id="lrows"></div></div>
 <div class="dots" id="pips"><i class="on"></i><i></i><i></i><i></i></div>
@@ -35,14 +35,14 @@ const map=makeMap({center:WOODHULL,zoom:15.2,pitch:60,bearing:-30});
 const EXCLUDE=['DSNY','DPR','DOC'];            // agencies left out of this story (Sanitation, Parks, Correction)
 const CIVIC=['DCAS','NYPD','FDNY'], DARK='#232B3D', BASE='#171D2C';
 const SCENES=[
- {h:'Woodhull Hospital',p:'Brooklyn. 1,134 secondary window units, NYSERDA-funded, in fabrication. The reference install.',
-  cam:{center:WOODHULL,zoom:15.2,pitch:60,bearing:-30},filter:['==',['get','wood'],1],label:'building'},
+ {h:'Woodhull Hospital',p:'Brooklyn. 1,134 secondary window units in fabrication. The reference install.',
+  cam:{center:WOODHULL,zoom:15.2,pitch:60,bearing:-30},label:'building'},
  {h:'Same owner: NYC Health + Hospitals',p:'67 more buildings across the five boroughs. The Woodhull install is the reference every one of them will ask to see.',
-  cam:{center:[-73.93,40.72],zoom:10.3,pitch:30,bearing:-10},filter:['==',['get','agency'],'H+H'],label:'H+H buildings'},
+  cam:{center:[-73.93,40.72],zoom:10.3,pitch:30,bearing:-10},label:'H+H buildings'},
  {h:'Same buyer: DCAS Energy Management',p:'Courthouses, precincts, firehouses, the Municipal Building. DCAS funds envelope retrofits for all of them — one checkbook, one approval path.',
-  cam:{center:[-73.95,40.73],zoom:10.1,pitch:20,bearing:0},filter:['in',['get','agency'],['literal',CIVIC]],label:'civic buildings'},
+  cam:{center:[-73.96,40.72],zoom:10.7,pitch:50,bearing:-20},label:'H+H + civic buildings',dur:3400},
  {h:'The whole portfolio',p:'2,296 City-owned buildings, 186 million sq ft — most of it schools. Reached through one relationship. Zoom in to see them.',
-  cam:{center:[-73.93,40.70],zoom:9.8,pitch:0,bearing:0},filter:null,label:'buildings'}
+  cam:{center:[-73.93,40.70],zoom:9.8,pitch:0,bearing:0},label:'buildings',dur:4200}
 ];
 let feats, agg, markers=[], cur=0;
 map.on('load',async()=>{
@@ -83,13 +83,16 @@ function updateZoom(){
   map.setPaintProperty('dots','circle-opacity',0.9*hi*lo);
   if(cur===3) markers.forEach(m=>m.getElement().style.opacity=clamp((11.2-z)/1));
 }
-function inScene(i,p){ return i===0?p.wood===1:i===1?p.agency==='H+H':i===2?CIVIC.includes(p.agency):true; }
+// cumulative: each scene keeps everything the previous one lit
+const SHOWN=[['H+H'],['H+H',...CIVIC]];
+function inScene(i,p){ return i===0?p.wood===1:i===3?true:SHOWN[i-1].includes(p.agency); }
+function sceneFilter(i){ return i===0?['==',['get','wood'],1]:i===3?null:['in',['get','agency'],['literal',SHOWN[i-1]]]; }
 function legendFor(i){
   const rows=[];
   const swatch=(c,l,n,dim)=>`<div class="row"><span class="sw${dim?' dim':''}" style="background:${c};color:${c}"></span><span>${l}</span>${n?`<span class="n">${n}</span>`:''}</div>`;
   if(i===0){ rows.push(swatch(COLORS['H+H'],'Woodhull Hospital · INOVUES install')); rows.push(swatch(DARK,'Other City-owned buildings','',true)); }
   else{
-    const grps=i===1?['H+H']:i===2?CIVIC:agg.agencies.slice().sort((a,b)=>b.sqft-a.sqft).map(a=>a.grp);
+    const grps=i===3?agg.agencies.slice().sort((a,b)=>b.sqft-a.sqft).map(a=>a.grp):SHOWN[i-1];
     for(const g of grps){ const a=agg.agencies.find(x=>x.grp===g); rows.push(swatch(COLORS[g],LABELS[g],a?`${a.n}`:'')); }
     if(i===2) rows.push(swatch(DARK,'Not in this scene','',true).replace('class="row"','class="row" style="margin-top:4px"'));
   }
@@ -100,11 +103,11 @@ function show(i){
   cur=i; const s=SCENES[i];
   document.getElementById('h').textContent=s.h; document.getElementById('p').textContent=s.p;
   document.querySelectorAll('#pips i').forEach((p,k)=>p.classList.toggle('on',k===i));
-  map.setFilter('dots',s.filter);
+  map.setFilter('dots',sceneFilter(i));
   // 3D footprints: Woodhull always cyan, the scene's set in agency colour, everything else dark
-  const lit=i===0?['==',['get','wood'],1]:i===1?['==',['get','agency'],'H+H']:i===2?['in',['get','agency'],['literal',CIVIC]]:true;
+  const lit=sceneFilter(i)||true;
   map.setPaintProperty('targets3d','fill-extrusion-color',['case',['==',['get','wood'],1],COLORS['H+H'],lit,COLOR_EXPR,DARK]);
-  map.flyTo({...s.cam,duration:INV.reduced?0:2600,essential:true,curve:1.3});
+  map.flyTo({...s.cam,duration:INV.reduced?0:(s.dur||2600),essential:true,curve:1.3});
   const sel=feats.features.filter(f=>inScene(i,f.properties));
   const n=i===3?agg.total_n:sel.length, sq=i===3?agg.total_sqft:i===0?0.5:sel.reduce((a,f)=>a+f.properties.sqft,0)/1e6; // Woodhull has no sqft in the LL24 file; ~0.5M is the known figure
   document.getElementById('nb').textContent=n.toLocaleString(); document.getElementById('nl').textContent=s.label; document.getElementById('nsq').textContent=sq.toFixed(1)+'M';
