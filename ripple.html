@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ripple — One hospital unlocks a city</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="config.js"></script><script src="shared.js"></script>
+</head><body>
+<a class="back" href="index.html">← all options</a>
+<div id="map"></div>
+<div class="head"><h1>One hospital unlocks a city</h1><p>A single reference install at Woodhull, and the 2,547 City-owned buildings DCAS Energy Management can fund next.</p></div>
+<div class="count"><div class="n" id="nb">1</div><div class="l">buildings within reach</div><div class="n sq" id="nsq">0.5M</div><div class="l">sq ft</div></div>
+<div class="cap on"><span class="wave" id="capw">Today</span><div class="txt" id="capt">Woodhull Hospital, Brooklyn. 1,134 secondary window units in fabrication.</div></div>
+<div class="controls"><button class="btn" id="replay" style="opacity:0;pointer-events:none">Replay</button></div>
+<div class="src">Source: NYC Open Data, DCAS Municipal Solar-Readiness Assessment (LL24), 2024. One dot per City-owned building over 10,000 sq ft.</div>
+<div class="err" id="err"><div>Mapbox token missing. Open <code>config.js</code>, paste your public token, reload.</div></div>
+<script>
+const {WOODHULL,COLOR_EXPR,reduced,tokenOk,makeMap,loadData,kmFromWoodhull,circlePolygon,tooltip}=INV;
+tokenOk();
+const map=makeMap({center:WOODHULL,zoom:13.8,pitch:45,bearing:-15}); map.scrollZoom.disable();
+const MAXKM=38, DUR=18000;
+const CAPS=[[0,'Today','Woodhull Hospital, Brooklyn. 1,134 secondary window units in fabrication.'],
+ [2,'Next door','Kings County, Woodhull, Cumberland — the H+H network starts within a few miles.'],
+ [8,'Across the river','Courthouses, precincts, firehouses, schools. Same buyer for all of them: DCAS Energy Management.'],
+ [18,'Citywide','Every borough. 2,547 buildings, 196 million sq ft, one approval path.']];
+let feats, anim, capIdx=0;
+map.on('load',async()=>{
+  const d=await loadData(); feats=d.buildings;
+  for(const f of feats.features){ f.properties.d=+kmFromWoodhull(...f.geometry.coordinates).toFixed(3); }
+  feats.features.sort((a,b)=>a.properties.d-b.properties.d);
+  map.addSource('b',{type:'geojson',data:feats});
+  map.addSource('ring',{type:'geojson',data:circlePolygon(WOODHULL,0.01)});
+  map.addLayer({id:'ringfill',type:'fill',source:'ring',paint:{'fill-color':'#00E5FF','fill-opacity':0.04}});
+  map.addLayer({id:'ring',type:'line',source:'ring',paint:{'line-color':'#00E5FF','line-width':2,'line-opacity':.9,'line-blur':1}});
+  map.addLayer({id:'dots',type:'circle',source:'b',paint:{'circle-color':COLOR_EXPR,'circle-opacity':0,
+    'circle-radius':['interpolate',['linear'],['zoom'],9,['interpolate',['linear'],['get','sqft'],10000,1.6,300000,4,1000000,7],14,['interpolate',['linear'],['get','sqft'],10000,4,300000,10,1000000,16]],
+    'circle-stroke-width':0}});
+  map.addSource('wood',{type:'geojson',data:{type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:WOODHULL}}]}});
+  map.addLayer({id:'woodpt',type:'circle',source:'wood',paint:{'circle-color':'#fff','circle-radius':6,'circle-stroke-color':'#00E5FF','circle-stroke-width':3}});
+  tooltip(map,'dots'); run();
+});
+function setR(km){
+  map.getSource('ring').setData(circlePolygon(WOODHULL,Math.max(0.01,km)));
+  // behind the ring: faint ember (0.28) · at the ring: bright band (1) · ahead: dark
+  const band=Math.max(0.6, km*0.06);
+  let xs=[0,km-band*1.6,km-band*0.4,km,km+0.05], ys=[0.28,0.28,1,1,0];
+  for(let i=1;i<xs.length;i++) if(xs[i]<=xs[i-1]) xs[i]=xs[i-1]+0.001;   // stops must strictly increase
+  map.setPaintProperty('dots','circle-opacity',['interpolate',['linear'],['get','d'],...xs.flatMap((x,i)=>[x,ys[i]])]);
+  let n=0,sq=0; for(const f of feats.features){ if(f.properties.d<=km){n++;sq+=f.properties.sqft;} else break; }
+  document.getElementById('nb').textContent=Math.max(1,n).toLocaleString(); document.getElementById('nsq').textContent=(Math.max(sq,5e5)/1e6).toFixed(1)+'M';
+  const c=[...CAPS].reverse().find(c=>km>=c[0]); const i=CAPS.indexOf(c);
+  if(i!==capIdx){capIdx=i; const cap=document.querySelector('.cap'); cap.classList.remove('on'); setTimeout(()=>{document.getElementById('capw').textContent=c[1]; document.getElementById('capt').textContent=c[2]; cap.classList.add('on');},300);}
+}
+function run(){
+  cancelAnimationFrame(anim); document.getElementById('replay').style.opacity=0; document.getElementById('replay').style.pointerEvents='none';
+  map.jumpTo({center:WOODHULL,zoom:13.8,pitch:45,bearing:-15}); capIdx=-1; setR(0);
+  if(reduced){ finish(); return; }
+  // camera tracks the ring: pull back as it grows
+  setTimeout(()=>map.flyTo({center:[-73.92,40.72],zoom:9.9,pitch:0,bearing:0,duration:DUR*0.85,curve:1.2,essential:true}),1200);
+  const t0=performance.now()+1200;
+  (function step(now){ const T=Math.min(1,Math.max(0,(now-t0)/DUR)); const e=1-Math.pow(1-T,2.2); setR(e*MAXKM); if(T<1) anim=requestAnimationFrame(step); else finish(); })(performance.now());
+}
+function finish(){ setR(MAXKM); map.setPaintProperty('dots','circle-opacity',0.7); map.setPaintProperty('ring','line-opacity',0); map.setPaintProperty('ringfill','fill-opacity',0);
+  const b=document.getElementById('replay'); b.style.opacity=1; b.style.pointerEvents='auto'; map.scrollZoom.enable(); }
+document.getElementById('replay').onclick=run;
+</script></body></html>

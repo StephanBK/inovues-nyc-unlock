@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Constellation — One hospital unlocks a city</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="config.js"></script><script src="shared.js"></script>
+<style>
+  body{display:grid;place-items:center;overflow:hidden}
+  svg{width:min(100vw,100vh);height:min(100vw,100vh);font-family:"Inter Tight",sans-serif}
+  .halo{animation:halo 2.4s ease-out infinite}
+  @keyframes halo{0%{opacity:.5;r:12}100%{opacity:0;r:48}}
+  @media (prefers-reduced-motion:reduce){.halo{animation:none}}
+  .steps{position:absolute;left:32px;bottom:48px;display:flex;flex-direction:column;gap:8px;z-index:3}
+  .steps button{text-align:left;background:transparent;border:1px solid #2A3350;color:var(--muted);border-radius:10px;padding:10px 14px;font:500 14px "Inter Tight",sans-serif;cursor:pointer;max-width:360px}
+  .steps button.on{border-color:var(--cyan);color:var(--text)}
+  .steps b{display:block;color:var(--text);font-weight:600}
+</style>
+</head><body>
+<a class="back" href="index.html">← all options</a>
+<div class="head"><h1>One hospital unlocks a city</h1><p>Not a map — the chain of relationships that turns one install into a 2,547-building portfolio.</p></div>
+<svg id="c" width="900" height="900"></svg>
+<div class="steps" id="steps">
+  <button data-s="0" class="on"><b>Woodhull Hospital</b>1,134 SWR units in fabrication — the proof point</button>
+  <button data-s="1"><b>Same owner</b>67 NYC Health + Hospitals buildings, 14M sq ft</button>
+  <button data-s="2"><b>Same buyer</b>DCAS Energy Management funds envelope retrofits for every City agency</button>
+  <button data-s="3"><b>The portfolio</b>2,547 buildings · 196M sq ft · one approval path</button>
+</div>
+<div class="src">Source: NYC Open Data, DCAS LL24 Municipal Solar-Readiness Assessment, 2024. Node size = gross sq ft.</div>
+<script>
+(async()=>{
+  const {agg}=await INV.loadData();
+  const c=INV.constellation(document.getElementById('c'),agg,{onSelect:(ring)=>go(Math.max(ring,1))});
+  const btns=[...document.querySelectorAll('#steps button')];
+  let cur=0;
+  function go(s){ cur=s; c.reveal(s); btns.forEach(b=>b.classList.toggle('on',+b.dataset.s===s)); }
+  btns.forEach(b=>b.onclick=()=>go(+b.dataset.s));
+  addEventListener('keydown',e=>{ if(e.key==='ArrowRight'||e.code==='Space'){e.preventDefault();go(Math.min(3,cur+1));} if(e.key==='ArrowLeft') go(Math.max(0,cur-1)); });
+  // auto-play once on load
+  if(!INV.reduced){ [1,2,3].forEach((s,i)=>setTimeout(()=>go(s),2200*(i+1))); } else go(3);
+})();
+</script></body></html>

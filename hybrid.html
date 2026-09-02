@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hybrid — One hospital unlocks a city</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="config.js"></script><script src="shared.js"></script>
+<style>
+  body{display:grid;grid-template-columns:minmax(360px,38%) 1fr;height:100vh}
+  .left{position:relative;background:#0B0F19;border-right:1px solid #1C2235;display:flex;flex-direction:column;padding:24px 20px 16px;min-width:0}
+  .left h1{font-size:clamp(22px,2.4vw,32px);font-weight:800;letter-spacing:-.02em;line-height:1;margin:0 0 6px}
+  .left p{color:var(--muted);font-size:14px;margin:0 0 8px;line-height:1.35}
+  .left svg{flex:1;width:100%;min-height:0;font-family:"Inter Tight",sans-serif}
+  .halo{animation:halo 2.4s ease-out infinite}@keyframes halo{0%{opacity:.5;r:10}100%{opacity:0;r:40}}
+  @media (prefers-reduced-motion:reduce){.halo{animation:none}}
+  .right{position:relative;min-width:0}
+  #map{position:absolute;inset:0}
+  .sel{position:absolute;left:20px;top:20px;background:var(--panel);backdrop-filter:blur(8px);border-radius:12px;padding:12px 16px;z-index:2;max-width:380px}
+  .sel b{font-size:22px;font-weight:800;letter-spacing:-.02em}.sel span{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+  .hint{font-size:12px;color:#4E5670;margin-top:8px}
+  .src{left:20px}
+  @media (max-width:800px){body{grid-template-columns:1fr;grid-template-rows:45vh 55vh}.left{border-right:0;border-bottom:1px solid #1C2235}}
+</style>
+</head><body>
+<div class="left">
+  <a class="back" href="index.html" style="position:static;margin-bottom:8px">← all options</a>
+  <h1>One hospital unlocks a city</h1>
+  <p>Click a ring to light it up on the map. Press → to step through.</p>
+  <svg id="c"></svg>
+  <div class="hint">Node size = gross sq ft. Source: NYC Open Data, DCAS LL24 assessment, 2024.</div>
+</div>
+<div class="right">
+  <div id="map"></div>
+  <div class="sel"><b id="sb">Woodhull Hospital</b><span id="ss">1,134 SWR units · NYSERDA-funded · in fabrication</span></div>
+  <div class="err" id="err"><div>Mapbox token missing. Open <code>config.js</code>, paste your public token, reload.</div></div>
+</div>
+<script>
+const {WOODHULL,COLOR_EXPR,COLORS,LABELS,tokenOk,makeMap,loadData,tooltip}=INV; tokenOk();
+const map=makeMap({center:WOODHULL,zoom:14.5,pitch:50,bearing:-20});
+const CIVIC=['DCAS','NYPD','FDNY','DOC'];
+let feats,agg,con,cur=0;
+map.on('load',async()=>{
+  const d=await loadData(); feats=d.buildings; agg=d.agg;
+  map.addSource('b',{type:'geojson',data:feats});
+  map.addLayer({id:'dim',type:'circle',source:'b',paint:{'circle-color':'#3A4460','circle-opacity':0.35,'circle-radius':['interpolate',['linear'],['zoom'],9,1.5,14,4]}});
+  map.addLayer({id:'lit',type:'circle',source:'b',paint:{'circle-color':COLOR_EXPR,'circle-opacity':0.95,
+    'circle-radius':['interpolate',['linear'],['zoom'],9,['interpolate',['linear'],['get','sqft'],10000,3,300000,6,1000000,10],14,['interpolate',['linear'],['get','sqft'],10000,6,300000,12,1000000,20]],
+    'circle-stroke-color':'#0B0F19','circle-stroke-width':0.8}});
+  tooltip(map,'lit');
+  const svg=document.getElementById('c'); svg.setAttribute('width',svg.clientWidth); svg.setAttribute('height',svg.clientHeight);
+  con=INV.constellation(svg,agg,{compact:true,onSelect:select});
+  con.reveal(3,0); select(0,'wood');
+});
+function select(ring,agency){
+  cur=ring; con.highlight(ring,agency);
+  let filter,cam,title,sub,sel;
+  if(ring===0){ filter=['==',['get','wood'],1]; cam={center:WOODHULL,zoom:14.5,pitch:50,bearing:-20}; title='Woodhull Hospital'; sub='1,134 SWR units · NYSERDA-funded · in fabrication'; }
+  else if(ring===1){ filter=['==',['get','agency'],'H+H']; cam={center:[-73.93,40.72],zoom:10.3,pitch:25,bearing:-10}; title='NYC Health + Hospitals'; }
+  else if(ring===2){ filter=['in',['get','agency'],['literal',CIVIC]]; cam={center:[-73.95,40.73],zoom:10.1,pitch:15,bearing:0}; title='DCAS Energy Management'; sub='Funds retrofits agency-wide — shown: DCAS, NYPD, FDNY, Correction'; }
+  else { filter=['==',['get','agency'],agency]; cam={center:[-73.93,40.70],zoom:9.9,pitch:0,bearing:0}; title=LABELS[agency]; }
+  sel=feats.features.filter(f=>{const p=f.properties; return ring===0?p.wood===1:ring===1?p.agency==='H+H':ring===2?CIVIC.includes(p.agency):p.agency===agency;});
+  if(!sub){ const a=agg.agencies.filter(x=>ring===1?x.grp==='H+H':ring===2?CIVIC.includes(x.grp):x.grp===agency); sub=`${a.reduce((s,x)=>s+x.n,0).toLocaleString()} buildings · ${a.reduce((s,x)=>s+x.sqft,0).toFixed(1)}M sq ft`; }
+  map.setFilter('lit',filter); map.flyTo({...cam,duration:INV.reduced?0:2200,essential:true});
+  document.getElementById('sb').textContent=title; document.getElementById('ss').textContent=sub;
+}
+const ORDER=[[0,'wood'],[1,'H+H'],[2,null],[3,'DOE'],[3,'DCAS'],[3,'DEP'],[3,'CUNY'],[3,'NYPD'],[3,'DSNY'],[3,'Libraries'],[3,'DOT'],[3,'DPR'],[3,'DOC'],[3,'FDNY'],[3,'Other']];
+let oi=0;
+addEventListener('keydown',e=>{ if(e.key==='ArrowRight'||e.code==='Space'){e.preventDefault();oi=(oi+1)%ORDER.length;select(...ORDER[oi]);} if(e.key==='ArrowLeft'){oi=(oi-1+ORDER.length)%ORDER.length;select(...ORDER[oi]);} });
+</script></body></html>
