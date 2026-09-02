@@ -4,7 +4,7 @@ Static web visuals for an investor deck: INOVUES' Woodhull Hospital SWR install 
 
 ## Run
 `python3 -m http.server 8080` → http://localhost:8080 (launcher). No build step. Deploy = GitHub Pages from `main` root.
-`config.js` holds the Mapbox public token — it is gitignored; never commit it.
+`config.js` holds the Mapbox public token. It is committed and the repo is public (needed for free GitHub Pages), so keep the token URL-restricted in the Mapbox dashboard. Live site: https://stephanbk.github.io/inovues-nyc-unlock/
 
 ## Files
 - `index.html` launcher · `ripple3d.html` (current favorite: ring sweeps from Woodhull over real 3D footprints) · `ripple.html` (flat dots) · `scenes.html` (4 click-through scenes) · `hybrid.html` (constellation + map) · `constellation.html` (no map) · `original.html` (v1, reference)
