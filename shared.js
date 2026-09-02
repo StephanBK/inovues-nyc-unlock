@@ -1,8 +1,9 @@
 // Shared helpers for all INOVUES visual options. Loaded after config.js.
 window.INV = (() => {
   const WOODHULL = [-73.941604, 40.700528];
-  const COLORS = {'H+H':'#00E5FF','DOE':'#F5B942','NYPD':'#5B8DEF','FDNY':'#EF5B5B','DPR':'#6BCB77','CUNY':'#C77DFF',
-    'DSNY':'#A0A0A0','DCAS':'#FFFFFF','DOT':'#FF9F1C','DOC':'#B5651D','Libraries':'#F2E863','DEP':'#3ABEFF','Other':'#8890A0'};
+  // 13 distinct hues spread around the wheel so every agency reads apart on the dark map
+  const COLORS = {'H+H':'#00E5FF','NYPD':'#3D7BFF','DOC':'#7C5CFF','CUNY':'#C13BFF','DCAS':'#FF3DAE','FDNY':'#FF3B3B',
+    'DOT':'#FF7A1A','DOE':'#FFC21A','Libraries':'#E8FF3D','DSNY':'#8DFF3D','DPR':'#22D65F','DEP':'#19E3B1','Other':'#9AA3B8'};
   const LABELS = {'H+H':'NYC Health + Hospitals','DOE':'Dept. of Education','NYPD':'NYPD','FDNY':'FDNY','DPR':'Parks','CUNY':'CUNY',
     'DSNY':'Sanitation','DCAS':'DCAS-managed','DOT':'DOT','DOC':'Correction','Libraries':'Libraries','DEP':'DEP','Other':'Other agencies'};
   const COLOR_EXPR = ['match',['get','agency'], ...Object.entries(COLORS).flat().slice(0,-2), COLORS.Other];

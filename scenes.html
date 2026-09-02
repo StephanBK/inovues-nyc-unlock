@@ -7,52 +7,109 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared.css">
 <script src="config.js"></script><script src="shared.js"></script>
-<style>.dots{position:absolute;left:50%;bottom:100px;transform:translateX(-50%);display:flex;gap:8px;z-index:3}.dots i{width:8px;height:8px;border-radius:50%;background:#2A3350}.dots i.on{background:var(--cyan)}</style>
+<style>
+  .dots{position:absolute;left:50%;bottom:100px;transform:translateX(-50%);display:flex;gap:8px;z-index:3}.dots i{width:8px;height:8px;border-radius:50%;background:#2A3350}.dots i.on{background:var(--cyan)}
+  .legend{position:absolute;right:32px;bottom:48px;z-index:2;background:var(--panel);backdrop-filter:blur(8px);border:1px solid #1C2235;border-radius:12px;padding:12px 14px;min-width:200px;max-width:280px;pointer-events:none;
+    opacity:0;transform:translateY(10px);transition:opacity .5s,transform .5s}
+  .legend.on{opacity:1;transform:none}
+  .legend h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .legend .row{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.25;padding:3px 0}
+  .legend .sw{width:14px;height:14px;border-radius:4px;flex:none;box-shadow:0 0 8px currentColor}
+  .legend .sw.dim{box-shadow:none;border:1px solid #3A4460}
+  .legend .n{margin-left:auto;padding-left:10px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+  @media (max-width:700px){.legend{right:20px;bottom:150px;max-width:200px;font-size:12px}.count{bottom:auto;top:20px}}
+</style>
 </head><body>
 <a class="back" href="index.html">← all options</a>
 <div id="map"></div>
 <div class="head"><h1 id="h">Woodhull Hospital</h1><p id="p">Brooklyn. 1,134 secondary window units, NYSERDA-funded, in fabrication. The reference install.</p></div>
 <div class="count"><div class="n" id="nb">1</div><div class="l" id="nl">building</div><div class="n sq" id="nsq">0.5M</div><div class="l">sq ft</div></div>
+<div class="legend" id="legend"><h3>What you're seeing</h3><div id="lrows"></div></div>
 <div class="dots" id="pips"><i class="on"></i><i></i><i></i><i></i></div>
 <div class="controls"><button class="btn ghost" id="prev">Back</button><button class="btn" id="next">Next</button></div>
-<div class="src">Source: NYC Open Data, DCAS LL24 Municipal Solar-Readiness Assessment, 2024. Zoom in on the last scene to see individual buildings.</div>
+<div class="src">Source: NYC Open Data, DCAS LL24 assessment (2024) and NYC Building Footprints. Real footprints and roof heights. Zoom in on any scene to see buildings in 3D.</div>
 <div class="err" id="err"><div>Mapbox token missing. Open <code>config.js</code>, paste your public token, reload.</div></div>
 <script>
-const {WOODHULL,COLOR_EXPR,COLORS,tokenOk,makeMap,loadData,tooltip}=INV; tokenOk();
+const {WOODHULL,COLOR_EXPR,COLORS,LABELS,tokenOk,makeMap,loadData,tooltip}=INV; tokenOk();
 const map=makeMap({center:WOODHULL,zoom:15.2,pitch:60,bearing:-30});
+const EXCLUDE=['DSNY','DPR','DOC'];            // agencies left out of this story (Sanitation, Parks, Correction)
+const CIVIC=['DCAS','NYPD','FDNY'], DARK='#232B3D', BASE='#171D2C';
 const SCENES=[
  {h:'Woodhull Hospital',p:'Brooklyn. 1,134 secondary window units, NYSERDA-funded, in fabrication. The reference install.',
   cam:{center:WOODHULL,zoom:15.2,pitch:60,bearing:-30},filter:['==',['get','wood'],1],label:'building'},
  {h:'Same owner: NYC Health + Hospitals',p:'67 more buildings across the five boroughs. The Woodhull install is the reference every one of them will ask to see.',
   cam:{center:[-73.93,40.72],zoom:10.3,pitch:30,bearing:-10},filter:['==',['get','agency'],'H+H'],label:'H+H buildings'},
- {h:'Same buyer: DCAS Energy Management',p:'Courthouses, precincts, firehouses, jails, the Municipal Building. DCAS funds envelope retrofits for all of them — one checkbook, one approval path.',
-  cam:{center:[-73.95,40.73],zoom:10.1,pitch:20,bearing:0},filter:['in',['get','agency'],['literal',['DCAS','NYPD','FDNY','DOC']]],label:'civic buildings'},
- {h:'The whole portfolio',p:'2,547 City-owned buildings, 196 million sq ft — most of it schools. Reached through one relationship. Zoom in to see them.',
+ {h:'Same buyer: DCAS Energy Management',p:'Courthouses, precincts, firehouses, the Municipal Building. DCAS funds envelope retrofits for all of them — one checkbook, one approval path.',
+  cam:{center:[-73.95,40.73],zoom:10.1,pitch:20,bearing:0},filter:['in',['get','agency'],['literal',CIVIC]],label:'civic buildings'},
+ {h:'The whole portfolio',p:'2,296 City-owned buildings, 186 million sq ft — most of it schools. Reached through one relationship. Zoom in to see them.',
   cam:{center:[-73.93,40.70],zoom:9.8,pitch:0,bearing:0},filter:null,label:'buildings'}
 ];
 let feats, agg, markers=[], cur=0;
 map.on('load',async()=>{
   const d=await loadData(); feats=d.buildings; agg=d.agg;
+  let fps=await fetch('footprints.json').then(r=>r.json());
+  // drop the excluded agencies everywhere: points, footprints, agency list, borough cards, totals
+  const keep=f=>!EXCLUDE.includes(f.properties.agency);
+  feats={...feats,features:feats.features.filter(keep)}; fps={...fps,features:fps.features.filter(keep)};
+  agg.agencies=agg.agencies.filter(a=>!EXCLUDE.includes(a.grp));
+  agg.total_n=agg.agencies.reduce((s,a)=>s+a.n,0); agg.total_sqft=agg.agencies.reduce((s,a)=>s+a.sqft,0);
+  for(const b of agg.boroughs){ const rows=Object.entries(agg.by_borough_agency[b.Borough]).filter(([g])=>!EXCLUDE.includes(g)); b.n=rows.reduce((s,[,v])=>s+v[0],0); b.sqft=+rows.reduce((s,[,v])=>s+v[1],0).toFixed(1); }
+  map.setLight({anchor:'map',color:'#dfe8ff',intensity:0.55,position:[1.4,120,55]});
+  const labelLayer=map.getStyle().layers.find(l=>l.type==='symbol'&&l.layout&&l.layout['text-field'])?.id;
+  // every other building in the city: a dark grey mass, so the lit ones read as figure against ground
+  map.addLayer({id:'city3d',type:'fill-extrusion',source:'composite','source-layer':'building',filter:['==',['get','extrude'],'true'],minzoom:11,
+    paint:{'fill-extrusion-color':BASE,'fill-extrusion-height':['get','height'],'fill-extrusion-base':['get','min_height'],'fill-extrusion-opacity':0.85,'fill-extrusion-vertical-gradient':true}},labelLayer);
+  // the 2,328 City-owned buildings as real 3D footprints; only the current scene's set is coloured
+  map.addSource('fp',{type:'geojson',data:fps});
+  map.addLayer({id:'targets3d',type:'fill-extrusion',source:'fp',paint:{'fill-extrusion-color':DARK,'fill-extrusion-height':['+',['get','h'],2],'fill-extrusion-base':0,
+    'fill-extrusion-opacity':0.96,'fill-extrusion-vertical-gradient':true,'fill-extrusion-ambient-occlusion-intensity':0.4}},labelLayer);
+  // dots carry the story at city scale, then hand over to the 3D shapes as you zoom in
   map.addSource('b',{type:'geojson',data:feats});
   map.addLayer({id:'dots',type:'circle',source:'b',paint:{'circle-color':COLOR_EXPR,'circle-opacity':0.9,
     'circle-radius':['interpolate',['linear'],['zoom'],9,['interpolate',['linear'],['get','sqft'],10000,2.5,300000,6,1000000,10],14,['interpolate',['linear'],['get','sqft'],10000,5,300000,12,1000000,20]],
     'circle-stroke-color':'#0B0F19','circle-stroke-width':0.8}});
-  tooltip(map,'dots');
+  tooltip(map,'dots'); tooltip(map,'targets3d');
   // borough totals for the last scene
-  for(const b of agg.boroughs){ const el=document.createElement('div'); el.className='boro'; el.innerHTML=`<b>${b.n}</b><span>${b.Borough} · ${b.sqft}M sq ft</span>`;
+  for(const b of agg.boroughs){ const el=document.createElement('div'); el.className='boro'; el.innerHTML=`<b>${b.n}</b><span>${b.Borough} · ${b.sqft.toFixed(1)}M sq ft</span>`;
     const m=new mapboxgl.Marker({element:el}).setLngLat([b.lon,b.lat]); markers.push(m); }
-  map.on('zoom',()=>{ if(cur===3){ const z=map.getZoom(); map.setPaintProperty('dots','circle-opacity',Math.min(0.9,Math.max(0,(z-10.6)/1.2))); markers.forEach(m=>m.getElement().style.opacity=Math.max(0,Math.min(1,(11.2-z)/1)));} });
+  map.on('zoom',updateZoom);
   show(0);
 });
+const clamp=(x)=>Math.max(0,Math.min(1,x));
+function updateZoom(){
+  const z=map.getZoom();
+  const hi=clamp((13.5-z)/1.5);                       // dots fade out as the 3D footprints take over
+  const lo=cur===3?clamp((z-10.6)/1.2):1;             // last scene: dots only appear once you zoom past the borough cards
+  map.setPaintProperty('dots','circle-opacity',0.9*hi*lo);
+  if(cur===3) markers.forEach(m=>m.getElement().style.opacity=clamp((11.2-z)/1));
+}
+function inScene(i,p){ return i===0?p.wood===1:i===1?p.agency==='H+H':i===2?CIVIC.includes(p.agency):true; }
+function legendFor(i){
+  const rows=[];
+  const swatch=(c,l,n,dim)=>`<div class="row"><span class="sw${dim?' dim':''}" style="background:${c};color:${c}"></span><span>${l}</span>${n?`<span class="n">${n}</span>`:''}</div>`;
+  if(i===0){ rows.push(swatch(COLORS['H+H'],'Woodhull Hospital · INOVUES install')); rows.push(swatch(DARK,'Other City-owned buildings','',true)); }
+  else{
+    const grps=i===1?['H+H']:i===2?CIVIC:agg.agencies.slice().sort((a,b)=>b.sqft-a.sqft).map(a=>a.grp);
+    for(const g of grps){ const a=agg.agencies.find(x=>x.grp===g); rows.push(swatch(COLORS[g],LABELS[g],a?`${a.n}`:'')); }
+    if(i===2) rows.push(swatch(DARK,'Not in this scene','',true).replace('class="row"','class="row" style="margin-top:4px"'));
+  }
+  const L=document.getElementById('legend'); L.classList.remove('on');
+  setTimeout(()=>{ document.getElementById('lrows').innerHTML=rows.join(''); L.classList.add('on'); },350);
+}
 function show(i){
   cur=i; const s=SCENES[i];
   document.getElementById('h').textContent=s.h; document.getElementById('p').textContent=s.p;
   document.querySelectorAll('#pips i').forEach((p,k)=>p.classList.toggle('on',k===i));
-  map.setFilter('dots',s.filter); map.flyTo({...s.cam,duration:INV.reduced?0:2600,essential:true,curve:1.3});
-  const sel=feats.features.filter(f=>{const p=f.properties; return i===0?p.wood===1:i===1?p.agency==='H+H':i===2?['DCAS','NYPD','FDNY','DOC'].includes(p.agency):true;});
-  const n=i===3?agg.total_n:sel.length, sq=i===3?agg.total_sqft:sel.reduce((a,f)=>a+f.properties.sqft,0)/1e6;
+  map.setFilter('dots',s.filter);
+  // 3D footprints: Woodhull always cyan, the scene's set in agency colour, everything else dark
+  const lit=i===0?['==',['get','wood'],1]:i===1?['==',['get','agency'],'H+H']:i===2?['in',['get','agency'],['literal',CIVIC]]:true;
+  map.setPaintProperty('targets3d','fill-extrusion-color',['case',['==',['get','wood'],1],COLORS['H+H'],lit,COLOR_EXPR,DARK]);
+  map.flyTo({...s.cam,duration:INV.reduced?0:2600,essential:true,curve:1.3});
+  const sel=feats.features.filter(f=>inScene(i,f.properties));
+  const n=i===3?agg.total_n:sel.length, sq=i===3?agg.total_sqft:i===0?0.5:sel.reduce((a,f)=>a+f.properties.sqft,0)/1e6; // Woodhull has no sqft in the LL24 file; ~0.5M is the known figure
   document.getElementById('nb').textContent=n.toLocaleString(); document.getElementById('nl').textContent=s.label; document.getElementById('nsq').textContent=sq.toFixed(1)+'M';
-  if(i===3){ markers.forEach(m=>m.addTo(map)); map.setPaintProperty('dots','circle-opacity',0); } else { markers.forEach(m=>m.remove()); map.setPaintProperty('dots','circle-opacity',0.9); }
+  if(i===3) markers.forEach(m=>m.addTo(map)); else markers.forEach(m=>m.remove());
+  updateZoom(); legendFor(i);
   document.getElementById('prev').disabled=i===0; document.getElementById('next').textContent=i===3?'Start over':'Next';
 }
 document.getElementById('next').onclick=()=>show((cur+1)%4); document.getElementById('prev').onclick=()=>show(Math.max(0,cur-1));
